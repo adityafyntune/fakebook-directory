@@ -3,11 +3,17 @@ import {
   flexRender,
   getCoreRowModel,
   getSortedRowModel,
+  getPaginationRowModel,
+  getFilteredRowModel,
 } from "@tanstack/react-table";
 
-import type { ColumnDef, SortingState } from "@tanstack/react-table";
+import type {
+  ColumnDef,
+  SortingState,
+  PaginationState,
+} from "@tanstack/react-table";
 import type { Person } from "../types/person";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface Props {
   data: Person[];
@@ -15,6 +21,16 @@ interface Props {
 
 export default function PersonsTable({ data }: Props) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [globalFilter, setGlobalFilter] = useState(""); // 👈 search state
+
+  // 👇 Get page from URL query param (fallback to 0)
+  const searchParams = new URLSearchParams(window.location.search);
+  const initialPage = Number(searchParams.get("page") || 0);
+
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: initialPage,
+    pageSize: 10,
+  });
 
   const columns: ColumnDef<Person>[] = [
     {
@@ -28,11 +44,11 @@ export default function PersonsTable({ data }: Props) {
       accessorFn: (row) => (
         <img
           src={row.image}
-          alt={"sorry"}
+          alt="sorry"
           className="w-12 h-12 rounded-full mx-auto"
         />
       ),
-      enableSorting: false, // sorting disable for image
+      enableSorting: false,
     },
     { header: "Building No.", accessorFn: (row) => row.address.buildingNumber },
     { header: "Street", accessorFn: (row) => row.address.street },
@@ -44,13 +60,22 @@ export default function PersonsTable({ data }: Props) {
   const table = useReactTable({
     data,
     columns,
-    state: {
-      sorting,
-    },
+    state: { sorting, pagination, globalFilter }, // 👈 include globalFilter
     onSortingChange: setSorting,
+    onPaginationChange: setPagination,
+    onGlobalFilterChange: setGlobalFilter, // 👈 connect filter state
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getFilteredRowModel: getFilteredRowModel(), // 👈 filtering support
   });
+
+  // 👇 Update URL whenever pageIndex changes
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("page", String(pagination.pageIndex));
+    window.history.replaceState({}, "", `?${params.toString()}`);
+  }, [pagination.pageIndex]);
 
   // toggle sort by Name column only
   const toggleNameSort = () => {
@@ -59,22 +84,32 @@ export default function PersonsTable({ data }: Props) {
         return [{ id: table.getAllLeafColumns()[0].id, desc: false }];
       }
       if (prev[0].desc === false) {
-        return [{ id: table.getAllLeafColumns()[0].id, desc: true }]; // sort DESC
+        return [{ id: table.getAllLeafColumns()[0].id, desc: true }];
       }
-      return []; // remove sorting
+      return [];
     });
   };
 
   return (
     <div className="w-full">
-      <button
-        onClick={toggleNameSort}
-        className="mb-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-      >
-        Sorting
-      </button>
+      <div className="flex justify-between items-center mb-3">
+        <button
+          onClick={toggleNameSort}
+          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+        >
+          Sorting
+        </button>
 
-      <table className=" border border-gray-300 rounded-lg shadow-md w-full">
+        <input
+          type="text"
+          placeholder="Search..."
+          value={globalFilter ?? ""}
+          onChange={(e) => setGlobalFilter(e.target.value)}
+          className="border px-3 py-2 rounded-lg w-64"
+        />
+      </div>
+
+      <table className="border border-gray-300 rounded-lg shadow-md w-full">
         <thead className="bg-gray-100">
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
@@ -107,6 +142,60 @@ export default function PersonsTable({ data }: Props) {
           ))}
         </tbody>
       </table>
+
+      {/* Pagination Controls */}
+      <div className="flex justify-between items-center mt-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => table.setPageIndex(0)}
+            disabled={!table.getCanPreviousPage()}
+            className="px-3 py-1 border rounded disabled:opacity-50"
+          >
+            {"<<"}
+          </button>
+          <button
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+            className="px-3 py-1 border rounded disabled:opacity-50"
+          >
+            {"<"}
+          </button>
+          <button
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+            className="px-3 py-1 border rounded disabled:opacity-50"
+          >
+            {">"}
+          </button>
+          <button
+            onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+            disabled={!table.getCanNextPage()}
+            className="px-3 py-1 border rounded disabled:opacity-50"
+          >
+            {">>"}
+          </button>
+        </div>
+
+        <span>
+          Page{" "}
+          <strong>
+            {table.getState().pagination.pageIndex + 1} of{" "}
+            {table.getPageCount()}
+          </strong>
+        </span>
+
+        <select
+          value={table.getState().pagination.pageSize}
+          onChange={(e) => table.setPageSize(Number(e.target.value))}
+          className="border px-2 py-1 rounded"
+        >
+          {[5, 10, 20, 50].map((size) => (
+            <option key={size} value={size}>
+              Show {size}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }
